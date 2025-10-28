@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>李李摳摳抽獎</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#fff7fb; --card:#fff; --ink:#3b3b4f; --muted:#8b8a9a;
+    --primary:#ff8ac3; --primary-2:#ffd1e8;
+    --accent:#9ae6ff; --accent-2:#c9f6ff; --ring:#ffe7f3; --good:#22c55e;
+  }
+  html,body{height:100%}
+  body{
+    margin:0; font-family: ui-rounded, "Noto Sans TC", "Segoe UI", system-ui, -apple-system, Arial;
+    color:var(--ink); background:
+      radial-gradient(1200px 600px at 10% -10%, #ffeef8 0%, #fff 60%) no-repeat,
+      linear-gradient(180deg,#fff 0%, var(--bg) 100%);
+  }
+  .wrap{max-width:1100px; margin:32px auto; padding:16px}
+  .card{
+    background:var(--card); border:1px solid #f3e6f1; border-radius:24px; padding:20px;
+    box-shadow:0 10px 30px rgba(255,170,214,.25);
+  }
+  h1{margin:0 0 6px; font-size:28px}
+  .desc{margin:0 0 14px; color:var(--muted)}
+  .row{display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end}
+  label{font-size:13px; color:var(--muted)}
+  input[type="file"], select, input[type="number"], textarea{
+    background:#fff; border:1px solid #ead7e7; color:var(--ink);
+    padding:10px 12px; border-radius:12px; min-width:220px; outline:none;
+  }
+  textarea{min-width:260px}
+  button{
+    border:0; padding:11px 16px; border-radius:999px; cursor:pointer; font-weight:700;
+    background:linear-gradient(135deg,var(--primary),#ffa9d3); color:#fff;
+    box-shadow:0 6px 14px rgba(255,138,195,.35); transition:transform .05s ease, filter .2s;
+  }
+  button:hover{filter:brightness(1.05)} button:active{transform:translateY(1px)}
+  button.ghost{background:#fff; color:var(--ink); border:1px solid #ead7e7; box-shadow:none}
+  .hr{height:1px; background:#f4e7f1; margin:16px 0}
+  .layout{display:grid; grid-template-columns: 420px 1fr; gap:16px}
+  @media (max-width:980px){ .layout{grid-template-columns: 1fr} }
+
+  /* ---------- 可愛轉圈圈舞台（中央固定 LOGO） ---------- */
+  .stage{
+    background:linear-gradient(180deg,#fff, #fff8fc);
+    border:1px solid #f3e6f1; border-radius:20px; padding:16px; position:relative; overflow:hidden;
+  }
+  .stage h3{margin:0 0 8px; font-size:16px}
+  .stage-inner{display:grid; grid-template-columns: 1fr; align-items:center; justify-items:center; gap:8px; padding:6px 0 2px;}
+  .ring{
+    width:260px; height:260px; border-radius:999px; position:relative;
+    background:
+      radial-gradient(closest-side, #fff 62%, transparent 63%) center,
+      conic-gradient(from 0deg, var(--primary-2), var(--accent-2), var(--primary-2));
+    border:6px solid var(--ring);
+    animation: idle 6s linear infinite;
+    display:grid; place-items:center;
+    box-shadow: inset 0 0 0 6px #ffffff, 0 8px 20px rgba(255,170,214,.3);
+  }
+  .ring.spin{ animation: spin 4.2s cubic-bezier(.17,.67,.17,1.08) forwards }
+  @keyframes idle{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  @keyframes spin{ 0%{transform:rotate(0)} 80%{transform:rotate(660deg)} 100%{transform:rotate(720deg)} }
+
+  /* 中央 LOGO 永遠存在（不被覆蓋） */
+  .logo-wrap{
+    width:120px; height:120px; border-radius:999px; background:#fff; border:2px solid #ffe0f0;
+    display:grid; place-items:center; box-shadow:0 6px 14px rgba(255,170,214,.2);
+  }
+  .logo-wrap img{max-width:80px; max-height:80px; display:block}
+
+  /* 得獎膠囊（會顯示全部得獎者，用、隔開） */
+  .winner-badge{
+    position:absolute; inset:auto 0 18px 0; margin:auto; max-width:92%;
+    background:#fff; border:2px dashed #ffd4ea; border-radius:999px; padding:8px 16px;
+    font-weight:800; color:#ff4aa8; box-shadow:0 6px 14px rgba(255,170,214,.25);
+    display:none; text-wrap:balance; word-break:break-word; text-align:center;
+  }
+  .winner-badge.show{ display:inline-block; animation: pop .35s ease-out }
+  @keyframes pop{ from{ transform:scale(.8); opacity:0 } to{ transform:scale(1); opacity:1 } }
+
+  .controls{display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:10px}
+  .tiny{font-size:12px; color:var(--muted)}
+  .ok{color:var(--good); font-weight:700}
+  .danger{color:#ef4444; font-weight:700}
+
+  /* 名單 / 結果 */
+  .panel{background:#fff; border:1px dashed #f1dcec; border-radius:16px; padding:14px; min-height:160px}
+  .panel h3{margin:0 0 8px; font-size:16px}
+  .mono{font-family: ui-monospace, Menlo, Consolas, "PingFang TC"; white-space:pre-wrap; font-size:13px; line-height:1.55}
+
+  /* 得獎「彈出」動畫列表 */
+  .winners-ul{list-style:none; padding:0; margin:6px 0 0}
+  .winners-ul li{
+    background:#fff; border:1px solid #ffe1f1; padding:8px 12px; border-radius:12px; margin:6px 0;
+    box-shadow:0 4px 10px rgba(255,170,214,.15);
+    transform:translateY(8px) scale(.98); opacity:0;
+    animation: li-pop .35s ease forwards;
+  }
+  @keyframes li-pop{ to{transform:translateY(0) scale(1); opacity:1} }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>李李摳摳抽獎 🎀</h1>
+      <p class="desc">匯入 Excel/CSV → 選擇姓名欄位 → 設定要抽出幾位 → 按「開始轉圈」！</p>
+
+      <div class="row">
+        <div>
+          <label>1) 匯入名單（.xlsx / .xls / .csv）</label><br>
+          <input id="file" type="file" accept=".xlsx,.xls,.csv">
+        </div>
+        <div>
+          <label>2) 選擇名單欄位</label><br>
+          <select id="column" disabled></select>
+        </div>
+        <div>
+          <label>3) 要抽出的人數</label><br>
+          <input id="count" type="number" min="1" step="1" value="1" disabled>
+        </div>
+        <div>
+          <label>（可選）排除名單（逗號或換行分隔）</label><br>
+          <textarea id="exclude" rows="2" placeholder="例：小明, 小美&#10;或一行一個" disabled></textarea>
+        </div>
+        <div style="align-self:center; display:flex; gap:8px; margin-left:auto">
+          <button id="resetBtn" class="ghost">重置</button>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="layout">
+        <!-- 可愛轉圈圈舞台（中央固定 LOGO） -->
+        <div class="stage">
+          <h3>✨ 李李摳摳 - 抽獎轉轉轉 ✨</h3>
+          <div class="stage-inner">
+            <div class="ring" id="ring">
+              <div class="logo-wrap">
+                <!-- 把你的 LOGO 放這裡；換成你的實際路徑 -->
+                <img src="/assets/LOGO.png" alt="李李摳摳" id="logo">
+              </div>
+              <div class="winner-badge" id="winnerBadge">🎊 恭喜：<span id="badgeName"></span> 🎊</div>
+            </div>
+            <div class="controls">
+              <button id="spinBtn" disabled>開始轉圈</button>
+            </div>
+            <div id="hint" class="tiny">載入名單後即可抽獎</div>
+          </div>
+        </div>
+
+        <!-- 名單與結果 -->
+        <div class="grid">
+          <div class="panel">
+            <h3>有效名單</h3>
+            <div id="poolStat" class="tiny">—</div>
+            <div id="poolList" class="mono">尚未載入資料</div>
+          </div>
+          <div class="panel" style="margin-top:12px">
+            <h3>得獎結果</h3>
+            <div id="winnerStat" class="tiny">—</div>
+            <div id="winnerList" class="mono">尚未抽獎</div>
+            <ul id="winnerUL" class="winners-ul"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ================= 功能需求 =================
+ * 1) 轉圈圈內固定 LOGO
+ * 2) 名單會「彈出」顯示
+ * 3) 開始後鎖定所有選項（直到重置）
+ * 4) 重置後才能再次旋轉
+================================================ */
+let rows = [];
+let headers = [];
+let pool = [];
+let winners = [];
+let locked = false;   // 是否已鎖定（開始後 true，重置回 false）
+let spinning = false; // 轉動中
+
+const els = {
+  file: document.getElementById('file'),
+  column: document.getElementById('column'),
+  count: document.getElementById('count'),
+  exclude: document.getElementById('exclude'),
+  resetBtn: document.getElementById('resetBtn'),
+  spinBtn: document.getElementById('spinBtn'),
+  poolStat: document.getElementById('poolStat'),
+  poolList: document.getElementById('poolList'),
+  winnerStat: document.getElementById('winnerStat'),
+  winnerList: document.getElementById('winnerList'),
+  winnerUL: document.getElementById('winnerUL'),
+  hint: document.getElementById('hint'),
+  ring: document.getElementById('ring'),
+  badge: document.getElementById('winnerBadge'),
+  badgeName: document.getElementById('badgeName')
+};
+
+/* --------- 工具 --------- */
+function t(s){ return String(s == null ? '' : s).replace(/\r/g,'').trim(); }
+function uniqNonEmpty(arr){
+  const set = Object.create(null), out=[];
+  for (let i=0;i<arr.length;i++){
+    const x = t(arr[i]);
+    if (x && !set[x]){ set[x]=1; out.push(x); }
+  }
+  return out;
+}
+function parseExclude(raw){ return !raw ? [] : uniqNonEmpty(raw.split(/[\n,]+/)); }
+function cryptoInt(maxExclusive){
+  if (maxExclusive<=0) return 0;
+  const max=0xFFFFFFFF, threshold=(max+1)-((max+1)%maxExclusive);
+  const buf=new Uint32Array(1); let r;
+  do{ window.crypto.getRandomValues(buf); r=buf[0]; } while(r>=threshold);
+  return r % maxExclusive;
+}
+function shufflePick(arr,k){
+  const a=arr.slice(), out=[];
+  k = Math.min(k, a.length);
+  for(let i=0;i<k;i++){ const idx=cryptoInt(a.length); out.push(a[idx]); a[idx]=a[a.length-1]; a.pop(); }
+  return out;
+}
+
+/* --------- UI 狀態控制 --------- */
+function setInputsEnabled(enabled){
+  els.file.disabled = !enabled;
+  els.column.disabled = !enabled || headers.length===0;
+  els.count.disabled = !enabled || headers.length===0;
+  els.exclude.disabled = !enabled || headers.length===0;
+  els.spinBtn.disabled = !enabled || !pool.length;
+}
+
+function lockAll(){
+  locked = true;
+  setInputsEnabled(false);
+  els.hint.innerHTML = '<span class="ok">抽獎進行完畢，請按「重置」才能再次旋轉</span>';
+}
+
+function unlockAll(){
+  locked = false;
+  setInputsEnabled(true);
+  els.hint.textContent = pool.length ? '名單已載入，可以抽獎' : '載入名單後即可抽獎';
+}
+
+/* --------- 更新面板 --------- */
+function updatePoolList(){
+  if (!pool.length){
+    els.poolList.textContent='尚未載入資料';
+    els.poolStat.textContent='—';
+    els.spinBtn.disabled=true;
+    return;
+  }
+  els.poolList.textContent = pool.map((v,i)=> (('00'+(i+1)).slice(-3)) + '. ' + v ).join('\n');
+  els.poolStat.textContent = '共 ' + pool.length + ' 筆';
+  if (!locked) els.spinBtn.disabled = false;
+}
+
+function updateWinners(){
+  if (!winners.length){
+    els.winnerList.textContent='尚未抽獎';
+    els.winnerStat.textContent='—';
+    els.badge.classList.remove('show');
+    els.badgeName.textContent = '';
+    els.winnerUL.innerHTML='';
+    return;
+  }
+  els.winnerList.textContent = winners.map((v,i)=> '#' + (i+1) + ' ' + v).join('\n');
+  els.winnerStat.textContent = '共 ' + winners.length + ' 位';
+  els.badgeName.textContent = winners.join('、');
+  els.badge.classList.add('show');
+
+  // 逐一「彈出」列表
+  els.winnerUL.innerHTML = '';
+  winners.forEach((w, idx)=>{
+    const li = document.createElement('li');
+    li.textContent = `#${idx+1} ${w}`;
+    li.style.animationDelay = (idx * 80) + 'ms';
+    els.winnerUL.appendChild(li);
+  });
+}
+
+/* --------- 建置名單 --------- */
+function buildPoolFrom(col){
+  const exSet = Object.create(null);
+  parseExclude(els.exclude.value).forEach(x=> exSet[x]=1);
+  const values = rows.map(r=> r[col]);
+  pool = uniqNonEmpty(values).filter(v=> !exSet[v]);
+  updatePoolList();
+}
+
+/* --------- 讀檔 --------- */
+els.file.addEventListener('change', function(e){
+  if (locked) return;
+
+  winners=[]; updateWinners();
+  els.badge.classList.remove('show'); els.badgeName.textContent = '';
+  els.hint.textContent='載入中…';
+
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const ext = (file.name.split('.').pop()||'').toLowerCase();
+
+  function afterWB(wb){
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+    if (!rows.length){ els.hint.textContent='讀到 0 列，請檢查檔案內容。'; return; }
+    headers = Object.keys(rows[0] || {});
+    els.column.innerHTML='';
+    headers.forEach(h=>{
+      const o=document.createElement('option'); o.value=h; o.textContent=h; els.column.appendChild(o);
+    });
+
+    // 推估姓名欄
+    const guessOrder=['姓名','name','Name','員工','人名'];
+    let guess = headers[0];
+    for (let i=0;i<headers.length;i++){ if (guessOrder.includes(headers[i])){ guess=headers[i]; break; } }
+    els.column.value = guess;
+    els.count.disabled=false; els.exclude.disabled=false; els.column.disabled=false;
+
+    buildPoolFrom(els.column.value);
+    els.hint.innerHTML = '已載入 <b>' + file.name + '</b>，可以開始抽獎 🎯';
+  }
+
+  if (ext==='csv'){
+    file.text().then(text=> afterWB(XLSX.read(text, {type:'string'})))
+      .catch(()=> els.hint.innerHTML = '<span class="danger">讀取失敗：請改用 .xlsx/.xls/.csv</span>');
+  } else {
+    file.arrayBuffer().then(buf=> afterWB(XLSX.read(buf, {type:'array'})))
+      .catch(()=> els.hint.innerHTML = '<span class="danger">讀取失敗：請改用 .xlsx/.xls/.csv</span>');
+  }
+});
+els.column.addEventListener('change', ()=> { if (!locked) buildPoolFrom(els.column.value); });
+els.exclude.addEventListener('input', ()=> { if (!locked && headers.length) buildPoolFrom(els.column.value); });
+
+/* --------- 轉圈抽獎（一次抽足 N 位），開始後鎖定，重置前不可再轉 --------- */
+els.spinBtn.addEventListener('click', function(){
+  if (locked || spinning) return;
+  if (!pool.length) { els.hint.textContent='尚無有效名單'; return; }
+
+  const need = Math.max(1, parseInt(els.count.value||'1',10));
+  const k = Math.min(need, pool.length);
+
+  // 進入轉動 + 鎖定（立即鎖所有輸入與按鈕）
+  spinning = true;
+  setInputsEnabled(false); // 包含把開始按鈕關掉
+  els.ring.classList.add('spin');
+  els.hint.textContent='轉圈圈中…';
+
+  // 動畫持續約 2.2s，之後抽籤 & 顯示
+  setTimeout(()=>{
+    const batch = shufflePick(pool, k);
+    winners = batch;
+    updateWinners();
+
+    // 視覺完結
+    els.ring.classList.remove('spin');
+    confetti(240);
+    els.hint.innerHTML = '<span class="ok">完成！共抽出 '+winners.length+' 位。重置後才能再次旋轉。</span>';
+
+    // 完全鎖定到重置
+    lockAll();
+    spinning = false;
+  }, 4000);
+});
+
+/* --------- 重置（才能再次旋轉） --------- */
+els.resetBtn.addEventListener('click', function(){
+  rows=[]; headers=[]; pool=[]; winners=[];
+  els.file.value=''; els.column.innerHTML=''; els.column.disabled=true;
+  els.count.value=1; els.count.disabled=true; els.exclude.value=''; els.exclude.disabled=true;
+  els.poolList.textContent='尚未載入資料'; els.poolStat.textContent='—';
+  els.winnerList.textContent='尚未抽獎'; els.winnerStat.textContent='—';
+  els.winnerUL.innerHTML='';
+  els.hint.textContent='載入名單後即可抽獎';
+  els.badge.classList.remove('show'); els.badgeName.textContent = '';
+  els.ring.classList.remove('spin');
+  spinning = false;
+  unlockAll(); // 重新開放操作
+});
+
+/* --------- 輕量 confetti（DOM 版） --------- */
+function confetti(n){
+  n = n || 160;
+  const frag = document.createDocumentFragment();
+  const colors = ['#ffd1e8','#ff8ac3','#9ae6ff','#c9f6ff','#fff6a9','#b9fbc0'];
+  for (let i=0;i<n;i++){
+    const d = document.createElement('div');
+    const size = 6 + cryptoInt(8);
+    d.style.position='fixed';
+    d.style.left = (cryptoInt(100)) + 'vw';
+    d.style.top = '-20px';
+    d.style.width = size+'px';
+    d.style.height = size+'px';
+    d.style.background = colors[cryptoInt(colors.length)];
+    d.style.borderRadius = cryptoInt(3) ? '4px' : '999px';
+    d.style.opacity = (0.7 + Math.random()*0.3).toFixed(2);
+    d.style.transform = 'rotate('+cryptoInt(360)+'deg)';
+    d.style.pointerEvents='none';
+    d.style.zIndex='9999';
+    const fall = 1200 + cryptoInt(900);
+    const drift = (cryptoInt(120) - 60);
+    d.animate(
+      [{ transform:'translate(0,0) rotate(0deg)' },
+       { transform:'translate('+drift+'px, 100vh) rotate('+cryptoInt(720)+'deg)' }],
+      { duration: fall, easing:'cubic-bezier(.2,.8,.2,1)', fill:'forwards' }
+    );
+    frag.appendChild(d);
+    setTimeout(()=>{ d.remove(); }, fall+150);
+  }
+  document.body.appendChild(frag);
+}
+
+/* 初始提示 */
+els.hint.textContent = '載入名單後即可抽獎';
+</script>
+</body>
+</html>
